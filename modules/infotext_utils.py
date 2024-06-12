@@ -13,7 +13,8 @@ from PIL import Image
 
 sys.modules['modules.generation_parameters_copypaste'] = sys.modules[__name__]  # alias for old name
 
-re_param_code = r'\s*(\w[\w \-/]+):\s*("(?:\\.|[^\\"])+"|[^,]*)(?:,|$)'
+# Enhanced regular expression to support all JSON formats and plain text
+re_param_code = r'\s*(\w[\w \-/]+):\s*({.*?}|\[.*?\]|"(?:\\.|[^\\"])*"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
 re_imagesize = re.compile(r"^(\d+)x(\d+)$")
 re_hypernet_hash = re.compile("\(([0-9a-f]+)\)$")
@@ -267,17 +268,25 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
 
     for k, v in re_param.findall(lastline):
         try:
-            if v[0] == '"' and v[-1] == '"':
-                v = unquote(v)
+            v = v.strip()
 
-            m = re_imagesize.match(v)
-            if m is not None:
-                res[f"{k}-1"] = m.group(1)
-                res[f"{k}-2"] = m.group(2)
+            if v.startswith('"') and v.endswith('"'):
+                v = unquote(v)
+            elif v.startswith('[') and v.endswith(']'):
+                v = json.loads(v)
+            elif v.startswith('{') and v.endswith('}'):
+                v = json.loads(v)
             else:
-                res[k] = v
-        except Exception:
-            print(f"Error parsing \"{k}: {v}\"")
+                m = re_imagesize.match(v)
+                if m:
+                    res[f"{k}-1"] = m.group(1)
+                    res[f"{k}-2"] = m.group(2)
+                    continue
+
+        except Exception as e:
+            print(f"Error parsing \"{k}: {v}\": {e}")
+
+        res[k] = v
 
     # Extract styles from prompt
     if shared.opts.infotext_styles != "Ignore":
